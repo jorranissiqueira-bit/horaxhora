@@ -1,0 +1,652 @@
+<script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Hxh Produtividade Brpe01",
+  "schemaVersion": 1,
+  "description": "Dashboard hxh: produtividade de Picking (Continuous + Pick to Ship), HU Assembly e Packing vs. meta, turno atual em andamento, BRPE01 — time do Jorrani e time do Guilherme. Atualiza a cada 10 min via BigQuery.",
+  "mcpTools": [],
+  "mcpServerNames": []
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f7f5;
+    --card-bg: #ffffff;
+    --border: #e5e5e0;
+    --text: #1a1a1a;
+    --muted: #666;
+    --muted2: #999;
+    --banner-bg: #fff8e6;
+    --banner-border: #f0d98c;
+    --banner-active-bg: #e9f7ef;
+    --banner-active-border: #a9dfc2;
+    --th-color: #888;
+    --zero-color: #ccc;
+    --total-bg: #fafafa;
+    --btn-bg: #fafafa;
+    --btn-border: #ddd;
+    --btn-text: #333;
+    --btn-active-bg: #1a1a1a;
+    --btn-active-text: #fff;
+    --chart-text: #444;
+    --chart-grid: #e5e5e0;
+  }
+  :root.dark {
+    --bg: #16181a;
+    --card-bg: #212327;
+    --border: #34373c;
+    --text: #eaeaea;
+    --muted: #aaa;
+    --muted2: #888;
+    --banner-bg: #3a3220;
+    --banner-border: #6b5b2e;
+    --banner-active-bg: #16332a;
+    --banner-active-border: #2f5c43;
+    --th-color: #aaa;
+    --zero-color: #555;
+    --total-bg: #262a2e;
+    --btn-bg: #262a2e;
+    --btn-border: #3d4147;
+    --btn-text: #eaeaea;
+    --btn-active-bg: #eaeaea;
+    --btn-active-text: #16181a;
+    --chart-text: #cfcfcf;
+    --chart-grid: #3a3d42;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px 0; }
+  h3 { font-size: 14px; margin: 0 0 10px 0; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .status { font-size: 12px; color: var(--muted); text-align: right; }
+  .theme-toggle {
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+  .theme-toggle:hover { opacity: 0.85; }
+  .shift-banner {
+    background: var(--banner-bg);
+    border: 1px solid var(--banner-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+  .shift-banner.active { background: var(--banner-active-bg); border-color: var(--banner-active-border); }
+
+  .filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+  }
+  .filter-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+  .filter-btn {
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .filter-btn:hover { opacity: 0.85; }
+  .filter-btn.active { background: var(--btn-active-bg); color: var(--btn-active-text); border-color: var(--btn-active-bg); }
+
+  .chart-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 18px;
+  }
+
+  .hour-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 16px;
+    overflow-x: auto;
+  }
+  table.hour-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.hour-table th, table.hour-table td {
+    text-align: center;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.hour-table th:first-child, table.hour-table td:first-child { text-align: left; }
+  table.hour-table th { color: var(--th-color); font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em; }
+  table.hour-table td.zero { color: var(--zero-color); }
+  table.hour-table tr.afastado { opacity: 0.45; }
+  table.hour-table tr.total-row td { font-weight: 700; border-top: 2px solid var(--muted2); border-bottom: none; background: var(--total-bg); }
+  td.nome-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #fff; background: #999; }
+  .footnote { font-size: 11px; color: var(--muted2); margin-top: 18px; }
+
+  /* célula de duas linhas: taxa líquida da hora (em cima) + unidades brutas (embaixo) */
+  .hr-cell { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
+  .hr-rate { font-weight: 700; font-size: 13px; }
+  .hr-units { font-size: 10.5px; color: var(--muted2); }
+  .hr-rate.rate-good { color: #1fae5c; }
+  .hr-rate.rate-bad { color: #e5484d; }
+  .hr-rate.rate-mid { color: var(--text); }
+  .hr-rate.rate-none { color: var(--zero-color); font-weight: 500; }
+  .hr-cell.empty-hr { color: var(--zero-color); }
+</style>
+
+<div class="top-bar">
+  <div>
+    <h1>hxh — Produtividade BRPE01</h1>
+    <div class="subtitle">Hora a hora por colaborador · time do Jorrani e time do Guilherme</div>
+  </div>
+  <div class="status">
+    <button class="theme-toggle" id="themeToggle">🌙 Modo escuro</button>
+    <div id="lastUpdated"></div>
+  </div>
+</div>
+
+<div id="shiftBanner" class="shift-banner"></div>
+
+<div class="filters">
+  <span class="filter-label">Processo (grade hora a hora):</span>
+  <button class="filter-btn" data-proc="pick_to_ship">Picking</button>
+  <button class="filter-btn" data-proc="hu_assembly">HU Assembly</button>
+  <button class="filter-btn" data-proc="packing">Packing</button>
+</div>
+
+<div class="chart-section">
+  <h3>% da meta por tipo de operação (agregado do time)</h3>
+  <div style="position:relative; height:320px;">
+    <canvas id="opChart"></canvas>
+  </div>
+</div>
+
+<div id="hourSections"></div>
+
+<div class="footnote" id="footnote"></div>
+
+<script>
+// Dados gerados no momento da publicação (atualizado a cada ~10 min por tarefa agendada).
+const GENERATED_AT = "2026-09-12T13:53:13-03:00";
+const SHIFT = {
+  label: "Turno 3 encerrado. Mostrando último turno: 11/09 23:00 → 12/09 07:00",
+  active: false
+};
+const ROWS = [
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cjose","hr":23,"units":0,"sys_h":0.2136111111},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":0,"units":92,"sys_h":0.9941666667},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":1,"units":58,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":2,"units":83,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":3,"units":0,"sys_h":0.0275},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":4,"units":42,"sys_h":0.9155555556},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":5,"units":66,"sys_h":0.8963888889},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":6,"units":46,"sys_h":0.5569444444},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"cleooliveira","hr":23,"units":61,"sys_h":0.7363888889},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":0,"units":111,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":1,"units":100,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":2,"units":52,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":3,"units":0,"sys_h":0.0158333333},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":4,"units":91,"sys_h":0.9977777778},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":5,"units":142,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":6,"units":47,"sys_h":0.4580555556},
+  {"time_lider":"guilherme","proc":"hu_assembly","ldap":"pralbuquerqu","hr":23,"units":91,"sys_h":0.8516666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":0,"units":72,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":1,"units":65,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":2,"units":33,"sys_h":0.4472222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":4,"units":43,"sys_h":0.6244444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":5,"units":33,"sys_h":0.745},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":6,"units":0,"sys_h":0.0336111111},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"agbatista","hr":23,"units":11,"sys_h":0.115},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"anaddutra","hr":0,"units":94,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"anaddutra","hr":1,"units":61,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"anaddutra","hr":2,"units":14,"sys_h":0.4458333333},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"anaddutra","hr":4,"units":41,"sys_h":0.6419444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"anaddutra","hr":5,"units":0,"sys_h":0.0469444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"anaddutra","hr":23,"units":18,"sys_h":0.1369444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"deyvsonhesil","hr":4,"units":1,"sys_h":0.2825},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"edrassis","hr":1,"units":38,"sys_h":0.7247222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"edrassis","hr":2,"units":50,"sys_h":0.9222222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"edrassis","hr":3,"units":2,"sys_h":0.1633333333},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"edrassis","hr":4,"units":83,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"edrassis","hr":5,"units":53,"sys_h":0.8130555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"edrassis","hr":6,"units":100,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":0,"units":87,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":1,"units":89,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":2,"units":56,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":3,"units":0,"sys_h":0.0491666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":4,"units":34,"sys_h":0.9466666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":5,"units":76,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":6,"units":51,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"elainevsilva","hr":23,"units":9,"sys_h":0.1416666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":0,"units":62,"sys_h":0.8630555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":1,"units":121,"sys_h":0.9730555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":2,"units":72,"sys_h":0.7536111111},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":3,"units":1,"sys_h":0.0491666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":4,"units":62,"sys_h":0.945},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":5,"units":63,"sys_h":0.8538888889},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":6,"units":86,"sys_h":0.9369444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"emtsilva","hr":23,"units":8,"sys_h":0.1363888889},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":0,"units":59,"sys_h":0.8805555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":1,"units":68,"sys_h":0.8380555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":2,"units":61,"sys_h":0.9730555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":3,"units":0,"sys_h":0.0469444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":4,"units":45,"sys_h":0.725},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":5,"units":47,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":6,"units":73,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"evesalves","hr":23,"units":14,"sys_h":0.1427777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"iirrodrigo","hr":0,"units":63,"sys_h":0.8072222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"iirrodrigo","hr":1,"units":60,"sys_h":0.8044444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"iirrodrigo","hr":2,"units":12,"sys_h":0.4144444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"iirrodrigo","hr":4,"units":45,"sys_h":0.6066666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"iirrodrigo","hr":5,"units":21,"sys_h":0.3547222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"iirrodrigo","hr":23,"units":5,"sys_h":0.0597222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"ivanil","hr":0,"units":23,"sys_h":0.5669444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"ivanil","hr":1,"units":77,"sys_h":0.9955555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"ivanil","hr":2,"units":67,"sys_h":0.9},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"ivanil","hr":4,"units":31,"sys_h":0.5002777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"ivanil","hr":5,"units":70,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"ivanil","hr":6,"units":43,"sys_h":0.7372222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":0,"units":81,"sys_h":0.8786111111},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":1,"units":76,"sys_h":0.8769444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":2,"units":39,"sys_h":0.5477777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":3,"units":3,"sys_h":0.0552777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":4,"units":84,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":5,"units":70,"sys_h":0.9363888889},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":6,"units":85,"sys_h":0.9091666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"matheusmcruz","hr":23,"units":3,"sys_h":0.0555555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"rmariely","hr":0,"units":33,"sys_h":0.3066666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"rmariely","hr":1,"units":29,"sys_h":0.3416666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"rmariely","hr":2,"units":27,"sys_h":0.5197222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"rmariely","hr":5,"units":17,"sys_h":0.2972222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":0,"units":54,"sys_h":0.6261111111},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":1,"units":45,"sys_h":0.6208333333},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":2,"units":58,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":3,"units":0,"sys_h":0.0497222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":4,"units":45,"sys_h":0.9475},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":5,"units":36,"sys_h":0.5219444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"tacianamasil","hr":6,"units":79,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"taixavier","hr":0,"units":41,"sys_h":0.7902777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"taixavier","hr":1,"units":69,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"taixavier","hr":2,"units":12,"sys_h":0.7194444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"taixavier","hr":4,"units":60,"sys_h":0.9469444444},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"taixavier","hr":5,"units":43,"sys_h":0.6836111111},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"taixavier","hr":23,"units":10,"sys_h":0.1266666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"thlira","hr":0,"units":18,"sys_h":0.6755555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"thlira","hr":1,"units":35,"sys_h":0.7702777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"thlira","hr":2,"units":26,"sys_h":0.7427777778},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"thlira","hr":4,"units":27,"sys_h":0.5791666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"thlira","hr":5,"units":24,"sys_h":0.3755555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"thlira","hr":6,"units":37,"sys_h":0.6780555556},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":0,"units":34,"sys_h":0.6472222222},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":1,"units":72,"sys_h":0.8875},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":2,"units":61,"sys_h":0.9941666667},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":4,"units":52,"sys_h":0.7075},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":5,"units":56,"sys_h":0.8333333333},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":6,"units":50,"sys_h":1.0},
+  {"time_lider":"guilherme","proc":"pick_to_ship","ldap":"walfsilva","hr":23,"units":17,"sys_h":0.1430555556},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":0,"units":29,"sys_h":0.2983333333},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":1,"units":86,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":2,"units":74,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":3,"units":0,"sys_h":0.0305555556},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":4,"units":43,"sys_h":0.8408333333},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":5,"units":61,"sys_h":0.7525},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"adsousilva","hr":6,"units":2,"sys_h":0.0416666667},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gajose","hr":0,"units":201,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gajose","hr":1,"units":109,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gajose","hr":2,"units":0,"sys_h":0.0377777778},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gajose","hr":23,"units":90,"sys_h":0.7308333333},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":0,"units":72,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":1,"units":74,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":2,"units":72,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":3,"units":0,"sys_h":0.0269444444},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":4,"units":59,"sys_h":0.9272222222},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":5,"units":84,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":6,"units":0,"sys_h":0.1861111111},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"gferreirasil","hr":23,"units":92,"sys_h":0.7119444444},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"jailsonassil","hr":0,"units":50,"sys_h":0.4194444444},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"jailsonassil","hr":1,"units":89,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"jailsonassil","hr":2,"units":102,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"jailsonassil","hr":3,"units":0,"sys_h":0.0261111111},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"jailsonassil","hr":4,"units":86,"sys_h":0.9836111111},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"jailsonassil","hr":5,"units":20,"sys_h":0.3066666667},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":0,"units":78,"sys_h":0.9255555556},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":1,"units":57,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":2,"units":66,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":3,"units":0,"sys_h":0.12},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":4,"units":97,"sys_h":0.8583333333},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":5,"units":110,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"renanwissilv","hr":6,"units":27,"sys_h":0.3688888889},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"ryisilva","hr":0,"units":66,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"ryisilva","hr":1,"units":17,"sys_h":0.2025},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"ryisilva","hr":2,"units":67,"sys_h":0.75},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"ryisilva","hr":4,"units":51,"sys_h":0.4972222222},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"ryisilva","hr":5,"units":1,"sys_h":0.0755555556},
+  {"time_lider":"jorrani","proc":"hu_assembly","ldap":"ryisilva","hr":23,"units":53,"sys_h":0.4586111111},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":0,"units":93,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":1,"units":70,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":2,"units":97,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":3,"units":0,"sys_h":0.1197222222},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":4,"units":88,"sys_h":0.8372222222},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":5,"units":149,"sys_h":1.0},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":6,"units":50,"sys_h":0.6733333333},
+  {"time_lider":"jorrani","proc":"packing","ldap":"tatianemasil","hr":23,"units":58,"sys_h":0.8233333333}
+];
+
+const TEAMS = {
+  jorrani: {
+    label: "Seu time (Jorrani)",
+    roster: [
+      {ldap:"aiovsilva", nome:"Kaio Vinicius Ferreira Da Silva"},
+      {ldap:"ysamsamuel", nome:"Yuri Samuel"},
+      {ldap:"asslima", nome:"Ana Gloria Da Silva Lima"},
+      {ldap:"leicferreira", nome:"Leila Cristina Ferreira"},
+      {ldap:"ccrrafaela", nome:"Cleide Rafaela Da Silva Santos"},
+      {ldap:"adsousilva", nome:"Adaias De Souza Silva"},
+      {ldap:"elamaria", nome:"Elaine Maria"},
+      {ldap:"elperes", nome:"Elvis Peres Albuquerque"},
+      {ldap:"gajose", nome:"Gabriel Jose Lima Gomes"},
+      {ldap:"gferreirasil", nome:"Gleybson Victor Ferreira Da Silva"},
+      {ldap:"jailsonassil", nome:"Jailson Alves Da Silva"},
+      {ldap:"josecaamaral", nome:"Jose Carlos Da Silva Amaral"},
+      {ldap:"ucajsilva", nome:"Lucas Gabriel Jose Da Silva"},
+      {ldap:"renanwissilv", nome:"Renan Willamis Da Silva"},
+      {ldap:"ricarlsilva", nome:"Ricardo Lira Silva"},
+      {ldap:"ryisilva", nome:"Ryckelmy Itallo Gomes Da Silva"},
+      {ldap:"tatianemasil", nome:"Tatiane Maria Da Silva"},
+      {ldap:"vitpetrola", nome:"Vitoria Petrola Lucas"}
+    ]
+  },
+  guilherme: {
+    label: "Time do Guilherme",
+    roster: [
+      {ldap:"anaddutra", nome:"Anthony Dutra Felipe"},
+      {ldap:"agbatista", nome:"Ariel Galdino Batista"},
+      {ldap:"bbrrodrigo", nome:"Bruno Rodrigo Albuquerque Batista Da Silva"},
+      {ldap:"cleooliveira", nome:"Cleiton Otavio De Oliveira"},
+      {ldap:"cjose", nome:"Cleyton José Xavier Gusmão"},
+      {ldap:"ddleite", nome:"Daniel Da Silva Leite"},
+      {ldap:"deyvsonhesil", nome:"Deyvson Henrique Da Silva"},
+      {ldap:"elainevsilva", nome:"Elaine Vieira Da Silva"},
+      {ldap:"emtsilva", nome:"Emerson Tiago Da Silva"},
+      {ldap:"evesalves", nome:"Everton Alves Da Silva"},
+      {ldap:"iirrodrigo", nome:"Italo Rodrigo Da Silva Lima"},
+      {ldap:"ivanil", nome:"Ivan Erison Alves Da Silva"},
+      {ldap:"joajunior", nome:"Joabe Pereira Da Silva Junior"},
+      {ldap:"seljunior", nome:"Jose Leonardo Da Silva Junior"},
+      {ldap:"jbneto", nome:"Jose Luiz Bazilio Neto", afastado:true},
+      {ldap:"mariavcosta", nome:"Maria Vitoria Dos Santos Costa"},
+      {ldap:"matheusmcruz", nome:"Matheus Marlon Correia Da Cruz"},
+      {ldap:"edrassis", nome:"Pedro Augusto Assis Da Silva"},
+      {ldap:"pralbuquerqu", nome:"Priscila Albuquerque Gomes Da Silva"},
+      {ldap:"rmlira", nome:"Rafaela Maria Lira Da Silva"},
+      {ldap:"rmariely", nome:"Renata Mariely Da Silva"},
+      {ldap:"rocavalcanti", nome:"Rodolfo Cavalcanti Aureliano"},
+      {ldap:"tacianamasil", nome:"Taciana Maria Da Silva"},
+      {ldap:"taixavier", nome:"Tailson Xavier De Santana"},
+      {ldap:"thlira", nome:"Thayna Gabriele Da Silva Lira"},
+      {ldap:"walfsilva", nome:"Walter Ferreira Da Silva"},
+      {ldap:"wafranca", nome:"Wandry Enriky Franca Da Silva"}
+    ]
+  }
+};
+
+// Picking usa só o SUBTYPE pick_to_ship (picking_continuous e picking literal
+// ficam de fora — validado por reconciliação manual contra o dashboard de
+// referência do time guilherme). Operado só pelo time do Guilherme.
+const PROCESSES = [
+  { key: "pick_to_ship", label: "Picking", meta: 82.21 },
+  { key: "hu_assembly", label: "HU Assembly", meta: 156.85 },
+  { key: "packing", label: "Packing", meta: 151.24 }
+];
+const PROC_TEAM_OVERRIDE = { pick_to_ship: ["guilherme"] };
+
+const STATE = { proc: "pick_to_ship" };
+let opChart = null;
+
+function hourSortKey(hr) {
+  return hr === 23 ? -1 : hr; // 23h vem antes de 0h, 1h, 2h...
+}
+function fmtHour(hr) {
+  return String(hr).padStart(2, "0") + "h";
+}
+function sumRows(filterFn) {
+  let units = 0, sysH = 0;
+  for (const r of ROWS) if (filterFn(r)) { units += r.units; sysH += r.sys_h; }
+  return { units, sysH };
+}
+function isDark() {
+  return document.documentElement.classList.contains("dark");
+}
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Célula "líquida" no estilo do dashboard do Guilherme: taxa da hora em cima
+// (unidades ÷ horas sistêmicas daquela hora, colorida vs. meta) e unidades
+// brutas embaixo, menor e apagado. "—" = colaborador não teve registro nessa
+// hora. "." = teve registro mas horas sistêmicas desprezíveis (<0.05h).
+function fmtHourCell(hasRecord, units, sysH, meta) {
+  if (!hasRecord) {
+    return `<div class="hr-cell empty-hr"><span class="hr-rate rate-none">—</span></div>`;
+  }
+  if (sysH < 0.05) {
+    return `<div class="hr-cell"><span class="hr-rate rate-none">.</span><span class="hr-units">${units}</span></div>`;
+  }
+  const rate = Math.round(units / sysH);
+  let cls = "rate-mid";
+  if (rate >= meta) cls = "rate-good";
+  else if (rate < meta * 0.6) cls = "rate-bad";
+  return `<div class="hr-cell"><span class="hr-rate ${cls}">${rate}</span><span class="hr-units">${units}</span></div>`;
+}
+
+function renderChart() {
+  const canvas = document.getElementById("opChart");
+  const ctx = canvas.getContext("2d");
+  if (opChart) { opChart.destroy(); opChart = null; }
+
+  const textColor = cssVar("--chart-text") || "#444";
+  const gridColor = cssVar("--chart-grid") || "#e5e5e0";
+
+  const labels = PROCESSES.map(p => p.label);
+  const palette = ["#3483FA", "#f5a623"];
+  const datasets = Object.entries(TEAMS).map(([teamKey, team], i) => {
+    const data = PROCESSES.map(p => {
+      const teamsAllowed = PROC_TEAM_OVERRIDE[p.key];
+      if (teamsAllowed && !teamsAllowed.includes(teamKey)) return null;
+      const { units, sysH } = sumRows(r => r.time_lider === teamKey && r.proc === p.key);
+      const rate = sysH > 0 ? units / sysH : 0;
+      return Math.round((rate / p.meta) * 1000) / 10;
+    });
+    return { type: "bar", label: team.label, data, backgroundColor: palette[i % palette.length] };
+  });
+  datasets.push({
+    type: "line", label: "Meta (100%)", data: labels.map(() => 100),
+    borderColor: "#e5484d", borderDash: [6, 4], pointRadius: 0, borderWidth: 2
+  });
+
+  // Rótulo de dados desenhado manualmente em cima de cada barra (sem plugin externo)
+  const barValueLabels = {
+    id: "barValueLabels",
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      chart.data.datasets.forEach((dataset, i) => {
+        if (dataset.type !== "bar") return;
+        const meta = chart.getDatasetMeta(i);
+        meta.data.forEach((bar, idx) => {
+          const value = dataset.data[idx];
+          if (value === null || value === undefined) return;
+          ctx.save();
+          ctx.fillStyle = textColor;
+          ctx.font = "600 11px -apple-system, Segoe UI, Roboto, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.fillText(value.toFixed(1) + "%", bar.x, bar.y - 4);
+          ctx.restore();
+        });
+      });
+    }
+  };
+
+  opChart = new Chart(ctx, {
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 18 } },
+      scales: {
+        y: { beginAtZero: true, title: { display: true, text: "% da meta", color: textColor }, ticks: { color: textColor }, grid: { color: gridColor } },
+        x: { ticks: { color: textColor }, grid: { color: gridColor } }
+      },
+      plugins: { legend: { position: "bottom", labels: { color: textColor } } }
+    },
+    plugins: [barValueLabels]
+  });
+}
+
+function renderProcSection(proc, teamKey, team) {
+  // horas com algum registro nesse time+processo
+  const hourSet = new Set(ROWS.filter(r => r.time_lider === teamKey && r.proc === proc.key).map(r => r.hr));
+  const hours = [...hourSet].sort((a, b) => hourSortKey(a) - hourSortKey(b));
+
+  // linhas por colaborador (oculta quem está zerado em todas as horas = folga)
+  let people = team.roster.map(person => {
+    const byHour = hours.map(hr => {
+      const row = ROWS.find(r => r.time_lider === teamKey && r.proc === proc.key && r.ldap === person.ldap && r.hr === hr);
+      return { hasRecord: !!row, units: row ? row.units : 0, sysH: row ? row.sys_h : 0 };
+    });
+    const { units: totalUnits, sysH: totalSysH } = sumRows(r => r.time_lider === teamKey && r.proc === proc.key && r.ldap === person.ldap);
+    const semAtividade = totalUnits === 0 && totalSysH === 0;
+    const media = totalSysH >= 0.10 ? Math.round((totalUnits / totalSysH) * 10) / 10 : null;
+    return { person, byHour, totalUnits, media, semAtividade };
+  });
+  const hiddenCount = people.filter(x => x.semAtividade).length;
+  people = people.filter(x => !x.semAtividade);
+  people.sort((a, b) => b.totalUnits - a.totalUnits);
+
+  const section = document.createElement("div");
+  section.className = "hour-section";
+
+  let html = `<h3>${team.label} — ${proc.label}${hiddenCount ? ` <span style="font-weight:400;color:var(--muted2);font-size:12px;">(${hiddenCount} sem atividade / folga, ocultos)</span>` : ""}</h3>`;
+
+  if (hours.length === 0) {
+    html += `<div style="color:var(--muted2); font-size:13px;">Sem registros no turno para este processo.</div>`;
+    section.innerHTML = html;
+    return section;
+  }
+
+  html += `
+    <table class="hour-table">
+      <thead>
+        <tr>
+          <th>Representante</th>
+          ${hours.map(hr => `<th>${fmtHour(hr)}</th>`).join("")}
+          <th>Med. líquida</th>
+          <th>Total un.</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const x of people) {
+    const cls = x.person.afastado ? "afastado" : "";
+    html += `<tr class="${cls}"><td class="nome-cell">${x.person.nome}${x.person.afastado ? ' <span class="badge">afastado</span>' : ""}</td>`;
+    html += x.byHour.map(h => `<td>${fmtHourCell(h.hasRecord, h.units, h.sysH, proc.meta)}</td>`).join("");
+    html += `<td>${x.media === null ? "—" : x.media.toFixed(0)}</td><td>${x.totalUnits}</td></tr>`;
+  }
+
+  // linha de totais do time (soma por hora)
+  const totalsByHour = hours.map(hr => {
+    return sumRows(r => r.time_lider === teamKey && r.proc === proc.key && r.hr === hr);
+  });
+  const { units: grandTotal, sysH: grandSysH } = sumRows(r => r.time_lider === teamKey && r.proc === proc.key);
+  const grandMedia = grandSysH >= 0.10 ? Math.round((grandTotal / grandSysH) * 10) / 10 : null;
+
+  html += `<tr class="total-row"><td>Total do time</td>`;
+  html += totalsByHour.map(t => `<td>${fmtHourCell(t.sysH > 0 || t.units > 0, t.units, t.sysH, proc.meta)}</td>`).join("");
+  html += `<td>${grandMedia === null ? "—" : grandMedia.toFixed(0)}</td><td>${grandTotal}</td></tr>`;
+
+  html += `</tbody></table>`;
+  section.innerHTML = html;
+  return section;
+}
+
+function render() {
+  const banner = document.getElementById("shiftBanner");
+  banner.textContent = SHIFT.label;
+  banner.className = "shift-banner" + (SHIFT.active ? " active" : "");
+
+  const procsToShow = [PROCESSES.find(p => p.key === STATE.proc)];
+
+  const hourSectionsEl = document.getElementById("hourSections");
+  hourSectionsEl.innerHTML = "";
+
+  for (const proc of procsToShow) {
+    const teamsToRender = PROC_TEAM_OVERRIDE[proc.key] || Object.keys(TEAMS);
+    for (const [teamKey, team] of Object.entries(TEAMS)) {
+      if (!teamsToRender.includes(teamKey)) continue;
+      hourSectionsEl.appendChild(renderProcSection(proc, teamKey, team));
+    }
+  }
+
+  renderChart();
+
+  const gen = new Date(GENERATED_AT);
+  document.getElementById("lastUpdated").textContent =
+    "Gerado às " + gen.toLocaleTimeString("pt-BR") + " (BRT)";
+  const metasTexto = procsToShow.map(p => `${p.label}: ${p.meta} un/h`).join(" · ");
+  document.getElementById("footnote").textContent =
+    `Meta — ${metasTexto}. "Média/h" = unidades ÷ horas sistêmicas trabalhadas (não é a mesma coisa que ÷ nº de colunas de hora). Quem está zerado em todas as horas não aparece — entendido como folga. Atualizado a cada ~10 min por tarefa agendada — reabra o painel pra ver a versão mais recente.`;
+}
+
+function setupFilters() {
+  document.querySelectorAll("[data-proc]").forEach(btn => {
+    if (btn.dataset.proc === STATE.proc) btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      STATE.proc = btn.dataset.proc;
+      document.querySelectorAll("[data-proc]").forEach(b => b.classList.toggle("active", b === btn));
+      render();
+    });
+  });
+}
+
+function setupThemeToggle() {
+  const btn = document.getElementById("themeToggle");
+  btn.addEventListener("click", () => {
+    const dark = document.documentElement.classList.toggle("dark");
+    btn.textContent = dark ? "☀️ Modo claro" : "🌙 Modo escuro";
+    renderChart(); // recarrega cores do gráfico pro tema atual
+  });
+}
+
+setupFilters();
+setupThemeToggle();
+render();
+</script>
